@@ -16,11 +16,21 @@
 
 using namespace std;
 
-const double PI = 4*atan(1);
+const float PI = 4*atan(1);
 
-__global__ void jacobiMethod(double* grid,double* potential, int sizeX,int sizeY,double scale,int noIters,double tolerance){
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true)
+{
+	if (code != cudaSuccess)
+	{
+		fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+		if (abort) exit(code);
+	}
+}
 
-	extern __shared__ double sharedMem[];
+__global__ void jacobiMethod(float* grid,float* potential, int sizeX,int sizeY,float scale,int noIters,float tolerance){
+
+	extern __shared__ float sharedMem[];
 	/*
 		Shared memory
 			1st part is grid
@@ -31,17 +41,21 @@ __global__ void jacobiMethod(double* grid,double* potential, int sizeX,int sizeY
 
 
 	// Copying from global to shared memory
-	
-	int bOx = blockIdx.x * blockDim.x;
-	int bOy = blockIdx.y * blockDim.y;
-	
 	int threadIdX = threadIdx.x;
 	int threadIdY = threadIdx.y;
-	
-	int totalBlockThreadId = threadIdY*blockDim.x + threadIdX;
 
-	int blockThreadIdx = threadIdX-noIters;
-	int blockThreadIdy = threadIdY-noIters;	
+	if (threadIdX == 0 && threadIdY == 0) {
+		//printf("At Beginning\n");
+	}
+
+
+	int bOx = blockIdx.x * blockDim.x;
+	int bOy = blockIdx.y * blockDim.y;
+
+	//int totalBlockThreadId = threadIdY*blockDim.x + threadIdX;
+
+	//int blockThreadIdx = threadIdX-noIters;
+	//int blockThreadIdy = threadIdY-noIters;	
 	
 	int effBlockSizeX = blockDim.x + 2 * noIters;
 	int effBlockSizeY = blockDim.y + 2 * noIters;
@@ -65,9 +79,9 @@ __global__ void jacobiMethod(double* grid,double* potential, int sizeX,int sizeY
 			sharedMem[currElemSM + 2 * sharedMemSize] = 0;
 		}
 	__syncthreads();
-
-
-
+	if (threadIdX == 0 && threadIdY == 0) {
+		//printf("Copied to shared memory\n");
+	}
 
 	for(int k=0;k<noIters;k++){
 		for(int i= threadIdX;i<effBlockSizeX;i+= blockDim.x)
@@ -77,16 +91,16 @@ __global__ void jacobiMethod(double* grid,double* potential, int sizeX,int sizeY
 				if(i>1){
 					sharedMem[currPos]+=(sharedMem[currPos- effBlockSizeY- sharedMemSize]/4);
 				}
-				if(i<sizeX-1){
+				if(i<effBlockSizeX -1){
 					sharedMem[currPos]+=(sharedMem[currPos+ effBlockSizeY - sharedMemSize]/4);
 				}
 				if(j>1){
 					sharedMem[currPos]+=(sharedMem[currPos-1- sharedMemSize]/4);
 				}
-				if(j<sizeY-1){
+				if(j<effBlockSizeY-1){
 					sharedMem[currPos]+=(sharedMem[currPos+1- sharedMemSize]/4);
 				}
-				if(i==sizeX-1||j==sizeY-1){
+				if(i== effBlockSizeX-1||j== effBlockSizeY-1){
 					//currSolution[currPos]=0;
 				}else{
 					sharedMem[currPos]+=(scale*scale/4* sharedMem[currPos-2* sharedMemSize]);
@@ -101,7 +115,10 @@ __global__ void jacobiMethod(double* grid,double* potential, int sizeX,int sizeY
 			}
 		__syncthreads();
 	}
-	
+	if (threadIdX == 0 && threadIdY == 0) {
+		//printf("Done computation\n");
+	}
+
 	for (int i = threadIdX; i<effBlockSizeX; i += blockDim.x)
 		for (int j = threadIdY; j < effBlockSizeY; j += blockDim.y) {
 			if (i >= noIters && j >= noIters && i < effBlockSizeX - noIters && j < effBlockSizeX - noIters) {
@@ -110,13 +127,14 @@ __global__ void jacobiMethod(double* grid,double* potential, int sizeX,int sizeY
 				potential[currElemMain] = sharedMem[currElemSM + 2* sharedMemSize];
 			}
 		}
+	if (threadIdX == 0 && threadIdY == 0) {
+		//printf("Copied to memory\n");
+	}
 
 }
 
-
-
-void createDiskInitialCharge(double* input, float totalCharge, int sizeX,int sizeY, int xCen, int yCen, int radius){
-	double chargePerPoint = totalCharge/(PI*radius*radius);
+void createDiskInitialCharge(float* input, float totalCharge, int sizeX,int sizeY, int xCen, int yCen, int radius){
+	float chargePerPoint = totalCharge/(PI*radius*radius);
 	int countPoints=0;
 	for(int i=0;i<sizeX;i++)
 		for(int j=0;j<sizeY;j++){
@@ -134,7 +152,7 @@ void createDiskInitialCharge(double* input, float totalCharge, int sizeX,int siz
 
 }
 
-void initializeProblem(double* grid,double* potential,double totalCharge,int sizeX,int sizeY,int sizeXCen,int sizeYCen,int discRadius){
+void initializeProblem(float* grid,float* potential,float totalCharge,int sizeX,int sizeY,int sizeXCen,int sizeYCen,int discRadius){
 
 	for(int i=0;i<sizeX*sizeY;i++)
 		potential[i]=0.0;
@@ -142,15 +160,15 @@ void initializeProblem(double* grid,double* potential,double totalCharge,int siz
 	createDiskInitialCharge(grid, totalCharge, sizeX, sizeY, sizeXCen,sizeYCen, discRadius);
 }
 
-void calculateElectricField(double* potential,double* field,int sizeX,int sizeY,double scale){
+void calculateElectricField(float* potential,float* field,int sizeX,int sizeY,float scale){
 
 	for(int i=0;i<sizeX;i++)
 		for(int j=0;j<sizeY;j++){
 			int currPos = (i*sizeY+j);
 
-			double currValPlusY=0;
-			double currValPlusX=0;
-			double currVal=potential[currPos];
+			float currValPlusY=0;
+			float currValPlusX=0;
+			float currVal=potential[currPos];
 			if(i==sizeY-1){
 				currValPlusY=0;
 			}
@@ -164,8 +182,6 @@ void calculateElectricField(double* potential,double* field,int sizeX,int sizeY,
 			else{
 				currValPlusX = potential[currPos+1];
 			}
-
-
 			field[2*currPos] = -(currValPlusX-currVal)/scale;
 			field[2*currPos+1] = -(currValPlusY-currVal)/scale;
 		}
@@ -173,7 +189,7 @@ void calculateElectricField(double* potential,double* field,int sizeX,int sizeY,
 
 
 
-void writeResultToFile(double* field,char* filename,int totalSize, int multiplicity){
+void writeResultToFile(float* field,char* filename,int totalSize, int multiplicity){
 	FILE* file = fopen(filename,"w");
 	for(int i=0;i<totalSize;i++){
 		for(int j=0;j<multiplicity;j++){
@@ -190,7 +206,7 @@ int main(int argc, char** argv) {
 	int sizeX=100;
 	int sizeY=100;
 	float actualRadius = 0.05; // in m
-	double scale = 0.01; // in m
+	float scale = 0.01; // in m
 	int discRadius = actualRadius/scale;
 	int noIters = 10000;
 	int noExtra=1;
@@ -206,86 +222,91 @@ int main(int argc, char** argv) {
 		return;
 	}
 	printf("Radius : %d\n",discRadius);
-	printf("Size : %d\n",sizeX);
+	printf("Grid Size : %d\n",sizeX);
 	printf("No Iterations : %d\n",noIters);
-	printf("No Threads : %d\n",noExtra);
+	printf("No Extra : %d\n",noExtra);
 
 	int sizeXCen=sizeX/2;
 	int sizeYCen=sizeY/2;
 	int totalSize=sizeX*sizeY;
 
-    double *grid = (double *)malloc(totalSize * sizeof(double));
+    float *grid = (float *)malloc(totalSize * sizeof(float));
 
-    double* potential = (double *)malloc(totalSize * sizeof(double));
+    float* potential = (float *)malloc(totalSize * sizeof(float));
 
     printf("Begin..\n");
 
 	float totalCharge = 250000;
-	float timeTaken = 0.0;
+	float timeTaken = 1.0f;
 
 	initializeProblem(grid,potential, totalCharge, sizeX, sizeY, sizeXCen,sizeYCen, discRadius);
 
     printf("Problem Initialized..\n");
 
-    double tolerance = 0.001;
+    float tolerance = 0.001;
+	float charge = 0.0;
+	for (int i = 0; i<sizeX; i++)
+		for (int j = 0; j<sizeY; j++) {
+			int currPos = i*sizeY + j;
+			charge += grid[currPos];
+			//printf("%f\n",potential[currPos]);
+		}
+	printf("Total charge is %f\n", charge);
 
-    double *d_grid, *d_potential;
-	cudaMalloc(&d_grid, totalSize*sizeof(double));
-	cudaMalloc(&d_potential, totalSize * sizeof(double));
+    float *d_grid, *d_potential;
+	cudaMalloc(&d_grid, totalSize*sizeof(float));
+	cudaMalloc(&d_potential, totalSize * sizeof(float));
 
 	cudaEvent_t startEventOrig_inc, stopEventOrig_inc;
 	cudaEventCreate(&startEventOrig_inc);
 	cudaEventCreate(&stopEventOrig_inc);
 	cudaEventRecord(startEventOrig_inc, 0);
 	
-	cudaMemcpy(d_grid, grid, totalSize * sizeof(double), cudaMemcpyHostToDevice);
-	cudaMemcpy(d_potential, potential, totalSize * sizeof(double), cudaMemcpyHostToDevice);
+	gpuErrchk(cudaMemcpy(d_grid, grid, totalSize * sizeof(float), cudaMemcpyHostToDevice));
+	gpuErrchk(cudaMemcpy(d_potential, potential, totalSize * sizeof(float), cudaMemcpyHostToDevice));
     
 	int threadPerBlock=32;
-	
-	dim3 blockSize(threadPerBlock,threadPerBlock);
-	
-	int noBlocks = ceil(sizeX/32);
-	
-	dim3 gridSize(noBlocks,noBlocks);
-	printf("No. of Blocks %d\n", noBlocks);
-	int sharedMemSize = 3*(threadPerBlock+2*noExtra)*(threadPerBlock+2*noExtra)*sizeof(double);
-	
+	dim3 blockSize(threadPerBlock,threadPerBlock,1);
+	int noBlocks = sizeX/threadPerBlock +1;
+	dim3 gridSize(noBlocks,noBlocks,1);
+
+	int sharedMemSize = 3*(threadPerBlock+2*noExtra)*(threadPerBlock+2*noExtra)*sizeof(float);
 	int totalIters = noIters/noExtra+1;
 	
-	printf("Total iters : %d\n", totalIters);
+	printf("Total Kernel Calls : %d\n", totalIters);
+	gpuErrchk(cudaPeekAtLastError());
 
 	for (int k = 0; k < totalIters; k++) {
+
 		jacobiMethod << <gridSize, blockSize, sharedMemSize >> >(d_grid, d_potential, sizeX, sizeY, scale, noExtra, tolerance);
-		cudaError_t err = cudaGetLastError();
-		if (err != cudaSuccess)
-			printf(cudaGetErrorString(err));
+		gpuErrchk(cudaPeekAtLastError());
 	}
-    	
-    
-    cudaMemcpy(potential, d_potential, totalSize * sizeof(double), cudaMemcpyDeviceToHost);    
-        
+	//gpuErrchk(cudaDeviceSynchronize());
+	cudaMemcpy(potential, d_potential, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
+	//gpuErrchk(cudaPeekAtLastError());
 	printf("Jacobi Method Ended\n");
-	float charge=0.0;
-	for(int i=0;i<sizeX;i++)
-		for(int j=0;j<sizeY;j++){
-			int currPos = i*sizeY+j;
-			charge+=grid[currPos];
-			//printf("%f\n",potential[currPos]);
-		}
 
 	//Calculating Field
-	double* field = (double*)malloc(sizeX*sizeY*2*sizeof(double));
-	printf("Total charge is %f\n",charge);
-//    fflush(stdout);
+	float* field = (float*)malloc(sizeX*sizeY*2*sizeof(float));
 
 	calculateElectricField(potential,field,sizeX,sizeY,scale);
 	
+	float time = 0.0;
 	cudaEventRecord(stopEventOrig_inc, 0);  //ending timing for inclusive
 	cudaEventSynchronize(stopEventOrig_inc);
-	cudaEventElapsedTime(&timeTaken, startEventOrig_inc, stopEventOrig_inc);
+	cudaEventElapsedTime(&time, startEventOrig_inc, stopEventOrig_inc);
+	
+	printf("Time taken %f\n", time);
 
-	printf("Time taken %f\n",timeTaken);
+	cudaDeviceReset();
+	
+	
+	
+	
+	
+	
+	
+	
 	char* outputFilenameField = "ElectricField.out";
 	char* outputFilenamePotential = "Potential.out";
 	char* outputFilenameGrid = "Grid.out";

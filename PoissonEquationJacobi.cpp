@@ -158,9 +158,25 @@ void writeResultToFile(double* field,char* filename,int totalSize, int multiplic
 }
 
 
-int main() {
+int main(int argc, char** argv) {
 	int sizeX=100;
 	int sizeY=100;
+	float actualRadius = 0.05; // in m
+	double scale = 0.01; // in m
+	int discRadius = actualRadius/scale;
+	int noIters = 10000;
+	int noThreads=1;
+	if(argc == 5){
+		sizeX = atoi(argv[1]);
+		sizeY=sizeX;
+		discRadius=atoi(argv[2]);
+		noIters=atoi(argv[3]);
+		noThreads=atoi(argv[4]);
+	}
+	else{
+		printf("Incorrect usage, proper usage is jacobi $sizeX $discRadius $noThreads");
+	}
+
 	int sizeXCen=sizeX/2;
 	int sizeYCen=sizeY/2;
 	int totalSize=sizeX*sizeY;
@@ -172,16 +188,12 @@ int main() {
     printf("Begin..\n");
 
 	float totalCharge = 250000;
-
-	float actualRadius = 0.05; // in m
-    double scale = 0.01; // in m
-
-	int discRadius = actualRadius/scale;
+    double startTime = omp_get_wtime();
     initializeProblem(grid,potential, totalCharge, sizeX, sizeY, sizeXCen,sizeYCen, discRadius);
 
     printf("Problem Initialized..\n");
     fflush(stdout);
-    int noIters = 10000;
+
 
     double tolerance = 0.001;
 
@@ -202,7 +214,9 @@ int main() {
     fflush(stdout);
 
 	calculateElectricField(potential,field,sizeX,sizeY,scale);
-
+	double endTime = omp_get_wtime();
+	double timeTaken=1000.0*(endTime-startTime);
+	printf("Time taken is %f\n",timeTaken);
 	char* outputFilenameField = "ElectricField.out";
 	char* outputFilenamePotential = "Potential.out";
 	char* outputFilenameGrid = "Grid.out";

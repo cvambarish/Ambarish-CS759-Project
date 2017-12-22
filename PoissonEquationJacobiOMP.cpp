@@ -45,6 +45,7 @@ void initializeProblem(double* grid,double* potential,double totalCharge,int siz
 
 void calculateElectricField(double* potential,double* field,int sizeX,int sizeY,double scale){
 
+#pragma omp parallel for
 	for(int i=0;i<sizeX;i++)
 		for(int j=0;j<sizeY;j++){
 			int currPos = (i*sizeY+j);
@@ -69,25 +70,6 @@ void calculateElectricField(double* potential,double* field,int sizeX,int sizeY,
 
 			field[2*currPos] = -(currValPlusX-currVal)/scale;
 			field[2*currPos+1] = -(currValPlusY-currVal)/scale;
-			// x - derivative
-//			if(i<sizeX-1){
-//				field[2*currPos] = (potential[currPos+sizeY]-potential[currPos])/(scale);
-//				printf("%f\n",potential[currPos+sizeY]);
-//				printf("%f\n",potential[currPos]);
-//			}
-//			else{
-//				field[2*currPos]=0;
-//				field[2*currPos+1]=0;
-//				continue;
-//			}
-//			// y - derivative
-//			if(j<sizeY-1){
-//				field[2*currPos+1] = (potential[currPos+1]-potential[currPos])/(scale);
-//			}
-//			else{
-//				field[2*currPos]=0;
-//				field[2*currPos+1]=0;
-//			}
 		}
 }
 
@@ -100,6 +82,7 @@ void jacobiMethod(double* grid,double* potential, int sizeX,int sizeY,double sca
 	int totalSize=sizeX*sizeY;
 
 	for(int k=0;k<noIters;k++){
+#pragma omp parallel for schedule(static,10)
 		for(int i=0;i<sizeX;i++)
 			for(int j=0;j<sizeY;j++){
 				int currPos = i*sizeY+j;
@@ -159,9 +142,31 @@ void writeResultToFile(double* field,char* filename,int totalSize, int multiplic
 }
 
 
-int main() {
+int main(int argc, char** argv) {
+
+
 	int sizeX=100;
 	int sizeY=100;
+	float actualRadius = 0.05; // in m
+	double scale = 0.01; // in m
+	int discRadius = actualRadius/scale;
+	int noIters = 10000;
+	int noThreads=1;
+	if(argc == 5){
+		sizeX = atoi(argv[1]);
+		sizeY=sizeX;
+		discRadius=atoi(argv[2]);
+		noIters=atoi(argv[3]);
+		noThreads=atoi(argv[4]);
+	}
+	else{
+		printf("Incorrect usage, proper usage is jacobi $sizeX $discRadius $noThreads");
+	}
+	printf("Radius : %d\n",discRadius);
+	printf("Size : %d\n",sizeX);
+	printf("No Iterations : %d\n",noIters);
+	printf("No Threads : %d\n",noThreads);
+
 	int sizeXCen=sizeX/2;
 	int sizeYCen=sizeY/2;
 	int totalSize=sizeX*sizeY;
@@ -174,22 +179,22 @@ int main() {
 
 	float totalCharge = 250000;
 
-	float actualRadius = 0.05; // in m
-    double scale = 0.01; // in m
+	omp_set_num_threads(noThreads);
 
-	int discRadius = actualRadius/scale;
-    initializeProblem(grid,potential, totalCharge, sizeX, sizeY, sizeXCen,sizeYCen, discRadius);
+	noThreads = omp_get_num_threads();
+
+
+
+    double startTime = omp_get_wtime();
+	initializeProblem(grid,potential, totalCharge, sizeX, sizeY, sizeXCen,sizeYCen, discRadius);
 
     printf("Problem Initialized..\n");
-    fflush(stdout);
-    int noIters = 10000;
 
     double tolerance = 0.001;
 
 	jacobiMethod(grid,potential,sizeX,sizeY,scale,noIters,tolerance);
 	printf("Jacobi Method Ended\n");
 	float charge=0.0;
-    fflush(stdout);
 	for(int i=0;i<sizeX;i++)
 		for(int j=0;j<sizeY;j++){
 			int currPos = i*sizeY+j;
@@ -200,10 +205,13 @@ int main() {
 	//Calculating Field
 	double* field = (double*)malloc(sizeX*sizeY*2*sizeof(double));
 	printf("Total charge is %f\n",charge);
-    fflush(stdout);
+//    fflush(stdout);
 
 	calculateElectricField(potential,field,sizeX,sizeY,scale);
 
+	double endTime = omp_get_wtime();
+	double timeTaken=1000.0*(endTime-startTime);
+	printf("Time taken %f\n",timeTaken);
 	char* outputFilenameField = "ElectricField.out";
 	char* outputFilenamePotential = "Potential.out";
 	char* outputFilenameGrid = "Grid.out";
