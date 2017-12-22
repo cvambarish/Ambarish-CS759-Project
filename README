@@ -1,2 +1,39 @@
+Poisson Equation in Parallel
+******************************************
 
-Final Project repo readme file
+I have three different flavors of the simulation of the poisson equation. The names of the executables are as follows:-
+
+PoissonEquationJacobi     ---->  Serial Version
+PoissonEquationJacobiOMP  ---->  OpenMP Version
+PoissonEquationJacobiCuda ---->  Cuda   Version
+
+
+The makefile should build all three executables from the source code.
+
+So, to build the executables, just do
+
+make
+
+Now to run, all three executables have the same syntax
+
+./{EXEC_NAME from above} $(gridDim) $(diskRadius) $(maxIter) $(noThreads)
+
+gridDim    --> Size of the grid to do the simulations in. Number of points in physical space in one dimension. The simulation is done in 2D, so total number of points = gridDim*gridDim
+diskRadius --> Radius of the disk of charge assumed to be at the center in terms of number of grid points. This is taken to be the sample case to measure performance
+maxIter    --> Maximum number of iterations that the algorithm tries before quitting
+noThreads  --> Not used in Serial implemetation/Actual number of OpenMp threads/Extra tile width on one side in Cuda
+
+
+All programs generate three files
+
+Potential.out     --> contains the electric potential at each point in the grid 
+ElectricField.out --> contains the components of the vector field at each point in the grid
+Grid.out          --> contains the actual charge distribution used, for checking and visualisation purposes
+
+I use a matlab script to look at the output of the files. I have included that here. 
+To use that script, just do
+
+quiverPlotFromFile('ElectricField.out','Potential.out',$gridDim)
+  
+This should generate a quiver plot for the electric field and a surface plot for the potential.
+
