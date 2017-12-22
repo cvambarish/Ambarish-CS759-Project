@@ -60,6 +60,7 @@ __global__ void jacobiMethod(float* grid,float* potential, int sizeX,int sizeY,f
 	int effBlockSizeX = blockDim.x + 2 * noIters;
 	int effBlockSizeY = blockDim.y + 2 * noIters;
 	
+
 	int totalSize = sizeX*sizeY;
 
 	int sharedMemSize = effBlockSizeX*effBlockSizeY;
@@ -102,7 +103,7 @@ __global__ void jacobiMethod(float* grid,float* potential, int sizeX,int sizeY,f
 				}
 				if(i== effBlockSizeX-1||j== effBlockSizeY-1){
 					//currSolution[currPos]=0;
-				}else{
+				}else if(currPos - 2 * sharedMemSize>=0){
 					sharedMem[currPos]+=(scale*scale/4* sharedMem[currPos-2* sharedMemSize]);
 				}
 			}
@@ -124,7 +125,10 @@ __global__ void jacobiMethod(float* grid,float* potential, int sizeX,int sizeY,f
 			if (i >= noIters && j >= noIters && i < effBlockSizeX - noIters && j < effBlockSizeX - noIters) {
 				int currElemSM = i*effBlockSizeX + j;
 				int currElemMain = (i - noIters + bOy)*sizeX + (j - noIters + bOx);
-				potential[currElemMain] = sharedMem[currElemSM + 2* sharedMemSize];
+				if (currElemMain > 0 && currElemMain < totalSize) {
+					potential[currElemMain] = sharedMem[currElemSM + 2 * sharedMemSize];
+				}
+
 			}
 		}
 	if (threadIdX == 0 && threadIdY == 0) {
@@ -281,9 +285,9 @@ int main(int argc, char** argv) {
 		jacobiMethod << <gridSize, blockSize, sharedMemSize >> >(d_grid, d_potential, sizeX, sizeY, scale, noExtra, tolerance);
 		gpuErrchk(cudaPeekAtLastError());
 	}
-	//gpuErrchk(cudaDeviceSynchronize());
+	gpuErrchk(cudaDeviceSynchronize());
 	cudaMemcpy(potential, d_potential, totalSize * sizeof(float), cudaMemcpyDeviceToHost);
-	//gpuErrchk(cudaPeekAtLastError());
+	gpuErrchk(cudaPeekAtLastError());
 	printf("Jacobi Method Ended\n");
 
 	//Calculating Field
